@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <!-- Two parallel curved paths simulating outline walls from a vinyl cutter trace -->
+  <!-- Outer wall -->
+  <path d="M 20 100 Q 60 20, 100 100 Q 140 180, 180 100" fill="none" stroke="#000" stroke-width="1"/>
+  <!-- Inner wall (offset ~10px inward) -->
+  <path d="M 20 90 Q 60 30, 100 90 Q 140 170, 180 90" fill="none" stroke="#000" stroke-width="1"/>
+
+  <!-- A pair of straight parallel lines -->
+  <path d="M 20 150 L 180 150" fill="none" stroke="#333" stroke-width="1"/>
+  <path d="M 20 170 L 180 170" fill="none" stroke="#333" stroke-width="1"/>
+</svg>

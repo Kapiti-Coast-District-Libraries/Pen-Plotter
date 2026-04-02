@@ -1,0 +1,1622 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PlotterFill — Contour Fill Generator</title>
+  <meta name="description" content="Convert filled SVG shapes to concentric contour lines for pen plotters.">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0
+    }
+
+    :root {
+      --bg-primary: #0a0e17;
+      --bg-secondary: #111827;
+      --bg-card: #1a2235;
+      --bg-hover: #243049;
+      --border: #2a3a55;
+      --text-primary: #e8ecf4;
+      --text-secondary: #8896b0;
+      --text-muted: #556580;
+      --accent: #4f8aff;
+      --accent-glow: rgba(79, 138, 255, 0.25);
+      --success: #34d399;
+      --warning: #fbbf24;
+      --danger: #f87171;
+      --radius: 12px;
+      --radius-sm: 8px;
+      --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      overflow-x: hidden
+    }
+
+    .header {
+      padding: 20px 32px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(79, 138, 255, 0.06) 0%, transparent 100%)
+    }
+
+    .header .logo {
+      width: 38px;
+      height: 38px;
+      background: linear-gradient(135deg, var(--accent), #7c3aed);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      font-weight: 700;
+      color: #fff;
+      box-shadow: 0 0 20px var(--accent-glow)
+    }
+
+    .header h1 {
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: -0.3px
+    }
+
+    .header .subtitle {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-left: auto
+    }
+
+    .app {
+      display: flex;
+      height: calc(100vh - 79px)
+    }
+
+    .sidebar {
+      width: 320px;
+      min-width: 320px;
+      border-right: 1px solid var(--border);
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow-y: auto;
+      background: var(--bg-secondary)
+    }
+
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden
+    }
+
+    .dropzone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 36px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: var(--transition);
+      background: var(--bg-card);
+      position: relative;
+      overflow: hidden
+    }
+
+    .dropzone::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at center, var(--accent-glow), transparent 70%);
+      opacity: 0;
+      transition: opacity 0.4s
+    }
+
+    .dropzone:hover,
+    .dropzone.drag-over {
+      border-color: var(--accent);
+      background: var(--bg-hover)
+    }
+
+    .dropzone:hover::before,
+    .dropzone.drag-over::before {
+      opacity: 1
+    }
+
+    .dropzone .icon {
+      font-size: 36px;
+      margin-bottom: 10px;
+      position: relative
+    }
+
+    .dropzone .label {
+      font-size: 15px;
+      font-weight: 500;
+      position: relative
+    }
+
+    .dropzone .hint {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 4px;
+      position: relative
+    }
+
+    .dropzone input[type="file"] {
+      display: none
+    }
+
+    .file-loaded {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-radius: var(--radius-sm);
+      background: rgba(52, 211, 153, 0.1);
+      border: 1px solid rgba(52, 211, 153, 0.25);
+      font-size: 13px;
+      color: var(--success)
+    }
+
+    .file-loaded.visible {
+      display: flex
+    }
+
+    .file-loaded .fname {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap
+    }
+
+    .file-loaded .remove {
+      background: none;
+      border: none;
+      color: var(--danger);
+      cursor: pointer;
+      font-size: 16px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      transition: var(--transition)
+    }
+
+    .file-loaded .remove:hover {
+      background: rgba(248, 113, 113, 0.15)
+    }
+
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 5px
+    }
+
+    .control-group label {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.6px
+    }
+
+    .control-row {
+      display: flex;
+      align-items: center;
+      gap: 10px
+    }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      flex: 1;
+      height: 6px;
+      border-radius: 3px;
+      background: var(--border);
+      outline: none
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      box-shadow: 0 0 8px var(--accent-glow);
+      transition: var(--transition)
+    }
+
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.15)
+    }
+
+    .range-value {
+      min-width: 44px;
+      text-align: center;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--accent);
+      background: rgba(79, 138, 255, 0.1);
+      padding: 4px 8px;
+      border-radius: 6px
+    }
+
+    input[type="color"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 36px;
+      height: 36px;
+      border: 2px solid var(--border);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      background: transparent;
+      padding: 2px
+    }
+
+    input[type="color"]::-webkit-color-swatch-wrapper {
+      padding: 0
+    }
+
+    input[type="color"]::-webkit-color-swatch {
+      border: none;
+      border-radius: 4px
+    }
+
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-secondary);
+      cursor: pointer
+    }
+
+    .checkbox-row input[type="checkbox"] {
+      accent-color: var(--accent);
+      width: 16px;
+      height: 16px
+    }
+
+    .divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 2px 0
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border-radius: var(--radius-sm);
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      transition: var(--transition)
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), #6366f1);
+      color: #fff;
+      box-shadow: 0 2px 12px var(--accent-glow)
+    }
+
+    .btn-primary:hover {
+      filter: brightness(1.1);
+      transform: translateY(-1px)
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      filter: none;
+      transform: none
+    }
+
+    .btn-secondary {
+      background: var(--bg-card);
+      color: var(--text-primary);
+      border: 1px solid var(--border)
+    }
+
+    .btn-secondary:hover {
+      background: var(--bg-hover);
+      border-color: var(--text-muted)
+    }
+
+    .btn-secondary:disabled {
+      opacity: 0.4;
+      cursor: not-allowed
+    }
+
+    .btn-full {
+      width: 100%
+    }
+
+    .preview-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-secondary)
+    }
+
+    .preview-bar .tab {
+      font-size: 13px;
+      font-weight: 500;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      color: var(--text-secondary);
+      transition: var(--transition);
+      border: none;
+      background: none
+    }
+
+    .preview-bar .tab.active {
+      background: var(--accent);
+      color: #fff
+    }
+
+    .preview-bar .tab:hover:not(.active) {
+      color: var(--text-primary);
+      background: var(--bg-hover)
+    }
+
+    .preview-container {
+      flex: 1;
+      display: flex;
+      position: relative;
+      overflow: hidden;
+      background: var(--bg-primary)
+    }
+
+    .preview-pane {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      background: #ffffff;
+      cursor: grab;
+      touch-action: none;
+      user-select: none
+    }
+
+    .preview-pane:active {
+      cursor: grabbing
+    }
+
+    .preview-pane .zoom-container {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform-origin: 0 0;
+      transition: none
+    }
+
+    .preview-pane .zoom-container>* {
+      display: block;
+      pointer-events: none;
+    }
+
+    .preview-pane .empty-state {
+      text-align: center;
+      color: var(--text-muted);
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 1
+    }
+
+    .preview-pane .empty-state .icon {
+      font-size: 48px;
+      margin-bottom: 8px
+    }
+
+    .preview-pane .empty-state p {
+      font-size: 14px
+    }
+
+    .preview-divider {
+      width: 1px;
+      background: var(--border)
+    }
+
+    .preview-label {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-muted);
+      background: var(--bg-primary);
+      padding: 4px 10px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      z-index: 2
+    }
+
+    .zoom-hint {
+      position: absolute;
+      bottom: 8px;
+      right: 8px;
+      font-size: 10px;
+      color: rgba(0, 0, 0, 0.35);
+      z-index: 2;
+      pointer-events: none
+    }
+
+    .status-bar {
+      padding: 8px 20px;
+      border-top: 1px solid var(--border);
+      background: var(--bg-secondary);
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 16px
+    }
+
+    .status-bar .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      display: inline-block
+    }
+
+    .status-bar .dot.active {
+      background: var(--success);
+      box-shadow: 0 0 6px rgba(52, 211, 153, 0.4)
+    }
+
+    .progress-bar {
+      display: none;
+      height: 3px;
+      background: var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 6px
+    }
+
+    .progress-bar.visible {
+      display: block
+    }
+
+    .progress-bar .fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), #7c3aed);
+      border-radius: 2px;
+      transition: width 0.3s
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(8px)
+      }
+
+      to {
+        opacity: 1;
+        transform: none
+      }
+    }
+
+    .fade-in {
+      animation: fadeIn 0.4s ease-out
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 0.6
+      }
+
+      50% {
+        opacity: 1
+      }
+    }
+
+    .processing {
+      animation: pulse 1.2s infinite
+    }
+
+    .info-box {
+      padding: 10px 14px;
+      border-radius: var(--radius-sm);
+      background: rgba(79, 138, 255, 0.08);
+      border: 1px solid rgba(79, 138, 255, 0.2);
+      font-size: 12px;
+      color: var(--text-secondary);
+      line-height: 1.5
+    }
+
+    .info-box strong {
+      color: var(--accent)
+    }
+
+    /* ── Pen Profiles ── */
+    .profile-row {
+      display: flex;
+      gap: 6px;
+      align-items: center
+    }
+
+    .profile-select {
+      flex: 1;
+      background: var(--bg-hover);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 6px 10px;
+      font-family: inherit;
+      font-size: 13px;
+      cursor: pointer
+    }
+
+    .profile-select:focus {
+      outline: none;
+      border-color: var(--accent)
+    }
+
+    .btn-icon {
+      padding: 6px 10px;
+      font-size: 15px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: var(--transition)
+    }
+
+    .btn-icon:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary)
+    }
+
+    .btn-icon:disabled {
+      opacity: 0.35;
+      cursor: not-allowed
+    }
+
+    /* ── Action button row ── - single full-width button */
+  </style>
+</head>
+
+<body>
+
+  <div class="header">
+    <div class="logo">P</div>
+    <h1>PlotterFill</h1>
+    <span class="subtitle">Contour Fill Generator for Pen Plotters</span>
+  </div>
+
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="dropzone" id="dropzone">
+        <div class="icon">📐</div>
+        <div class="label">Drop SVG here</div>
+        <div class="hint">or click to browse</div>
+        <input type="file" id="fileInput" accept=".svg, .png, .jpg, .jpeg">
+      </div>
+      <div class="file-loaded" id="fileLoaded">
+        <span>✅</span>
+        <span class="fname" id="fileName"></span>
+        <button class="remove" id="removeFile" title="Remove file">&times;</button>
+      </div>
+
+      <div class="info-box">
+        <strong>How it works:</strong> Renders your SVG to a bitmap, computes the distance from each filled pixel to the
+        nearest edge, then draws <strong>concentric contour lines</strong> at regular intervals — filling the shape from
+        the outside in, like stacking smaller and smaller outlines.
+      </div>
+
+      <hr class="divider">
+
+      <div class="control-group">
+        <label>Render Scale (quality)</label>
+        <div class="control-row">
+          <input type="range" id="renderScale" min="1" max="6" value="3" step="1">
+          <span class="range-value" id="renderScaleVal">3x</span>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <label>Line Spacing (mm)</label>
+        <div class="control-row">
+          <input type="range" id="lineSpacing" min="0.1" max="10" value="0.5" step="0.05">
+          <span class="range-value" id="lineSpacingVal">0.50</span>
+        </div>
+        <div class="info-box" style="margin-top:4px;font-size:11px">Set to pen tip size for gapless fill. Outer edge of pen follows each contour.</div>
+      </div>
+
+      <div class="control-group">
+        <label>Path Simplification</label>
+        <div class="control-row">
+          <input type="range" id="simplify" min="0" max="5" value="1" step="0.25">
+          <span class="range-value" id="simplifyVal">1.0</span>
+        </div>
+      </div>
+
+      <div class="control-group" id="thresholdGroup" style="display:none">
+        <label>Image Trace Threshold</label>
+        <div class="control-row">
+          <input type="range" id="traceThreshold" min="0" max="255" value="128" step="1">
+          <span class="range-value" id="traceThresholdVal">128</span>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <label>Min Contour Length (px)</label>
+        <div class="control-row">
+          <input type="range" id="minContour" min="0" max="100" value="10" step="1">
+          <span class="range-value" id="minContourVal">10</span>
+        </div>
+      </div>
+
+      <hr class="divider">
+
+      <div class="control-group">
+        <label>Physical Width (mm)</label>
+        <div class="control-row">
+          <input type="number" id="physicalWidth" min="1" max="2000" value="100"
+            style="width: 70px; background: var(--bg-hover); color: white; border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; font-family: inherit; font-size: 13px;">
+          <span style="font-size:12px;color:var(--text-secondary)">Height: <span id="physicalHeightVal">100.0</span>
+            mm</span>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <label>Pen Tip Size (mm)</label>
+        <div class="control-row">
+          <input type="range" id="strokeWidth" min="0.1" max="5" value="0.5" step="0.1">
+          <span class="range-value" id="strokeWidthVal">0.5</span>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <label>Output Stroke Color</label>
+        <div class="control-row">
+          <input type="color" id="strokeColor" value="#4f8aff">
+          <span style="font-size:13px;color:var(--text-secondary)" id="strokeColorHex">#4f8aff</span>
+        </div>
+      </div>
+
+      <hr class="divider">
+
+      <label class="checkbox-row">
+        <input type="checkbox" id="showOriginal" checked>
+        Show original (dimmed) in result
+      </label>
+
+      <hr class="divider">
+
+      <!-- ── Pen Profiles ── -->
+      <div class="control-group">
+        <label>Pen Profile</label>
+        <div class="profile-row">
+          <select class="profile-select" id="profileSelect"></select>
+          <button class="btn-icon" id="profileSaveBtn" title="Save current settings as a new profile">💾</button>
+          <button class="btn-icon" id="profileDeleteBtn" title="Delete selected profile">🗑️</button>
+        </div>
+      </div>
+
+      <hr class="divider">
+
+      <div>
+        <button class="btn btn-primary btn-full" id="processBtn" disabled>⚙️ Generate Contour Fill</button>
+      </div>
+      <div class="progress-bar" id="progressBar">
+        <div class="fill" id="progressFill"></div>
+      </div>
+      <button class="btn btn-secondary btn-full" id="exportBtn" disabled>💾 Export SVG</button>
+    </aside>
+
+    <div class="main">
+      <div class="preview-bar">
+        <button class="tab active" data-view="split">Split View</button>
+        <button class="tab" data-view="original">Original</button>
+        <button class="tab" data-view="result">Result</button>
+      </div>
+      <div class="preview-container">
+        <div class="preview-pane" id="paneOriginal">
+          <span class="preview-label">Original</span>
+          <div class="zoom-container" id="zoomOriginal"></div>
+          <div class="empty-state" id="emptyOriginal">
+            <div class="icon">📂</div>
+            <p>Drop an SVG to get started</p>
+          </div>
+          <span class="zoom-hint">Scroll to zoom · Drag to pan</span>
+        </div>
+        <div class="preview-divider" id="previewDivider"></div>
+        <div class="preview-pane" id="paneResult">
+          <span class="preview-label">Result</span>
+          <div class="zoom-container" id="zoomResult"></div>
+          <div class="empty-state" id="emptyResult">
+            <div class="icon">✨</div>
+            <p>Contour lines will appear here</p>
+          </div>
+          <span class="zoom-hint">Scroll to zoom · Drag to pan</span>
+        </div>
+      </div>
+      <div class="status-bar">
+        <span class="dot" id="statusDot"></span>
+        <span id="statusText">Ready — drop an SVG file to begin</span>
+      </div>
+    </div>
+  </div>
+
+  <canvas id="offCanvas" style="display:none;"></canvas>
+
+  <script>
+    const $ = id => document.getElementById(id);
+
+    let fileSource = null;
+    let isRaster = false;
+    let svgWidth = 0, svgHeight = 0;
+    let svgWidthAttr = '500', svgHeightAttr = '500';
+    let svgViewBox = null;
+    let currentFileName = '';
+    let generatedPathsStr = '';
+
+    const dropzone = $('dropzone'), fileInput = $('fileInput');
+    const fileLoaded = $('fileLoaded'), fileName = $('fileName');
+    const removeFileBtn = $('removeFile');
+    const renderScale = $('renderScale'), renderScaleVal = $('renderScaleVal');
+    const lineSpacing = $('lineSpacing'), lineSpacingVal = $('lineSpacingVal');
+    const simplifySlider = $('simplify'), simplifyVal = $('simplifyVal');
+    const traceThreshold = $('traceThreshold'), traceThresholdVal = $('traceThresholdVal');
+    const minContour = $('minContour'), minContourVal = $('minContourVal');
+    const strokeWidth = $('strokeWidth'), strokeWidthVal = $('strokeWidthVal');
+    const strokeColor = $('strokeColor'), strokeColorHex = $('strokeColorHex');
+    const showOriginal = $('showOriginal');
+    const processBtn = $('processBtn'), exportBtn = $('exportBtn');
+    const progressBar = $('progressBar'), progressFill = $('progressFill');
+    const paneOriginal = $('paneOriginal'), paneResult = $('paneResult');
+    const statusDot = $('statusDot'), statusText_ = $('statusText');
+    const offCanvas = $('offCanvas');
+    const profileSelect = $('profileSelect'), profileSaveBtn = $('profileSaveBtn'), profileDeleteBtn = $('profileDeleteBtn');
+
+    // ─── Pen Profiles ───
+    const BUILTIN_PROFILES = [
+      { name: '0.3 mm Fineliner', penTipMM: 0.3, spacingMM: 0.3 },
+      { name: '0.5 mm Ballpoint', penTipMM: 0.5, spacingMM: 0.5 },
+      { name: '0.8 mm Felt-tip',  penTipMM: 0.8, spacingMM: 0.8 },
+      { name: '1.0 mm Marker',    penTipMM: 1.0, spacingMM: 1.0 },
+    ];
+    const PROFILE_KEY = 'plotterFill_profiles';
+
+    function getCustomProfiles() {
+      try { return JSON.parse(localStorage.getItem(PROFILE_KEY)) || []; } catch { return []; }
+    }
+    function saveCustomProfiles(arr) {
+      localStorage.setItem(PROFILE_KEY, JSON.stringify(arr));
+    }
+    function rebuildProfileSelect(selectName) {
+      profileSelect.innerHTML = '';
+      const group1 = document.createElement('optgroup');
+      group1.label = 'Built-in';
+      BUILTIN_PROFILES.forEach((p, i) => {
+        const o = document.createElement('option');
+        o.value = 'builtin:' + i;
+        o.textContent = p.name;
+        if (selectName === p.name) o.selected = true;
+        group1.appendChild(o);
+      });
+      profileSelect.appendChild(group1);
+      const customs = getCustomProfiles();
+      if (customs.length) {
+        const group2 = document.createElement('optgroup');
+        group2.label = 'My Profiles';
+        customs.forEach((p, i) => {
+          const o = document.createElement('option');
+          o.value = 'custom:' + i;
+          o.textContent = p.name;
+          if (selectName === p.name) o.selected = true;
+          group2.appendChild(o);
+        });
+        profileSelect.appendChild(group2);
+      }
+      updateDeleteBtn();
+    }
+    function updateDeleteBtn() {
+      profileDeleteBtn.disabled = !profileSelect.value.startsWith('custom:');
+    }
+    function applyProfile(p) {
+      strokeWidth.value = p.penTipMM;
+      strokeWidthVal.textContent = p.penTipMM;
+      lineSpacing.value = p.spacingMM;
+      lineSpacingVal.textContent = p.spacingMM.toFixed(2);
+    }
+    function selectedProfile() {
+      const v = profileSelect.value;
+      if (v.startsWith('builtin:')) return BUILTIN_PROFILES[parseInt(v.split(':')[1])];
+      const customs = getCustomProfiles();
+      return customs[parseInt(v.split(':')[1])] || null;
+    }
+    profileSelect.addEventListener('change', () => { const p = selectedProfile(); if (p) applyProfile(p); updateDeleteBtn(); });
+    profileSaveBtn.addEventListener('click', () => {
+      const name = prompt('Profile name:', 'My Pen');
+      if (!name) return;
+      const customs = getCustomProfiles();
+      const existing = customs.findIndex(p => p.name === name);
+      const profile = { name, penTipMM: parseFloat(strokeWidth.value), spacingMM: parseFloat(lineSpacing.value) };
+      if (existing >= 0) customs[existing] = profile; else customs.push(profile);
+      saveCustomProfiles(customs);
+      rebuildProfileSelect(name);
+    });
+    profileDeleteBtn.addEventListener('click', () => {
+      const p = selectedProfile();
+      if (!p || !profileSelect.value.startsWith('custom:')) return;
+      if (!confirm(`Delete profile "${p.name}"?`)) return;
+      let customs = getCustomProfiles();
+      customs = customs.filter(c => c.name !== p.name);
+      saveCustomProfiles(customs);
+      rebuildProfileSelect();
+    });
+    rebuildProfileSelect();
+    // Apply the first built-in immediately
+    applyProfile(BUILTIN_PROFILES[0]);
+
+
+    function updatePhysicalHeight() {
+      if (svgWidth && svgHeight) {
+        const w = parseFloat(physicalWidth.value) || 100;
+        physicalHeightVal.textContent = (w * (svgHeight / svgWidth)).toFixed(1);
+      }
+    }
+
+    // ─── Events ───
+    dropzone.addEventListener('click', () => fileInput.click());
+    dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag-over'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag-over'));
+    dropzone.addEventListener('drop', e => {
+      e.preventDefault(); dropzone.classList.remove('drag-over');
+      const f = e.dataTransfer.files[0];
+      if (f && f.name.toLowerCase().endsWith('.svg')) loadFile(f);
+    });
+    fileInput.addEventListener('change', () => { if (fileInput.files[0]) loadFile(fileInput.files[0]); });
+    removeFileBtn.addEventListener('click', resetAll);
+
+    renderScale.addEventListener('input', () => renderScaleVal.textContent = renderScale.value + 'x');
+    lineSpacing.addEventListener('input', () => lineSpacingVal.textContent = parseFloat(lineSpacing.value).toFixed(2));
+    simplifySlider.addEventListener('input', () => simplifyVal.textContent = parseFloat(simplifySlider.value).toFixed(1));
+    if (traceThreshold) traceThreshold.addEventListener('input', () => traceThresholdVal.textContent = traceThreshold.value);
+    minContour.addEventListener('input', () => minContourVal.textContent = minContour.value);
+    strokeWidth.addEventListener('input', () => strokeWidthVal.textContent = strokeWidth.value);
+    physicalWidth.addEventListener('input', updatePhysicalHeight);
+    strokeColor.addEventListener('input', () => strokeColorHex.textContent = strokeColor.value);
+
+    document.querySelectorAll('.preview-bar .tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.preview-bar .tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        const v = tab.dataset.view;
+        paneOriginal.style.display = (v === 'result') ? 'none' : '';
+        $('previewDivider').style.display = (v === 'split') ? '' : 'none';
+        paneResult.style.display = (v === 'original') ? 'none' : '';
+      });
+    });
+
+    function setStatus(text, active = false) { statusText_.textContent = text; statusDot.classList.toggle('active', active); }
+    function setProgress(pct) { progressBar.classList.toggle('visible', pct < 100); progressFill.style.width = pct + '%'; }
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    function resetAll() {
+      fileSource = null; generatedPathsStr = '';
+      fileLoaded.classList.remove('visible'); dropzone.style.display = '';
+      processBtn.disabled = true; exportBtn.disabled = true;
+      clearPane(paneOriginal); clearPane(paneResult);
+      setStatus('Ready — drop an SVG file to begin');
+    }
+    function clearPane(pane) {
+      const e = pane.querySelector('.empty-state'); if (e) e.style.display = '';
+      const o = pane.querySelector('svg, canvas, img'); if (o) o.remove();
+    }
+
+    function loadFile(file) {
+      const name = file.name.toLowerCase();
+      if (!name.endsWith('.svg') && !name.endsWith('.png') && !name.endsWith('.jpg') && !name.endsWith('.jpeg')) return;
+
+      currentFileName = file.name;
+      isRaster = !name.endsWith('.svg');
+      const group = $('thresholdGroup');
+      if (group) group.style.display = isRaster ? 'flex' : 'none';
+
+      const reader = new FileReader();
+      reader.onload = e => {
+        fileSource = e.target.result;
+        displayOriginal(fileSource, isRaster);
+        fileName.textContent = currentFileName;
+        fileLoaded.classList.add('visible'); dropzone.style.display = 'none';
+        processBtn.disabled = false;
+        setStatus('File loaded — click Generate to create contour fill', true);
+      };
+      if (isRaster) reader.readAsDataURL(file);
+      else reader.readAsText(file);
+    }
+
+    function displayOriginal(src, raster) {
+      clearPane(paneOriginal);
+      const e = paneOriginal.querySelector('.empty-state'); if (e) e.style.display = 'none';
+      if (raster) {
+        const img = new Image();
+        img.onload = () => {
+          img.classList.add('fade-in');
+          svgWidthAttr = img.naturalWidth;
+          svgHeightAttr = img.naturalHeight;
+          svgWidth = img.naturalWidth;
+          svgHeight = img.naturalHeight;
+          svgViewBox = `0 0 ${svgWidth} ${svgHeight}`;
+          updatePhysicalHeight();
+          $('zoomOriginal').appendChild(img);
+          resetZoom('zoomOriginal');
+        };
+        img.src = src;
+      } else {
+        const div = document.createElement('div'); div.innerHTML = src;
+        const svg = div.querySelector('svg');
+        if (svg) {
+          svg.classList.add('fade-in');
+          const vb = svg.getAttribute('viewBox'), w = svg.getAttribute('width'), h = svg.getAttribute('height');
+          svgWidthAttr = w || '500'; svgHeightAttr = h || '500';
+          if (vb) {
+            svgViewBox = vb;
+            const p = vb.split(/[\s,]+/).map(Number); svgWidth = p[2]; svgHeight = p[3];
+          } else {
+            svgWidth = parseFloat(w) || 500; svgHeight = parseFloat(h) || 500;
+            svgViewBox = `0 0 ${svgWidth} ${svgHeight}`;
+          }
+          updatePhysicalHeight();
+          $('zoomOriginal').appendChild(svg);
+          resetZoom('zoomOriginal');
+        }
+      }
+    }
+
+    // ─── Process ───
+    processBtn.addEventListener('click', async () => {
+      if (!fileSource) return;
+      processBtn.disabled = true; processBtn.classList.add('processing');
+      setStatus(isRaster ? 'Processing Image...' : 'Rasterizing SVG...', true); setProgress(5);
+      await sleep(50);
+
+      try {
+        const scale = parseInt(renderScale.value);
+        const cw = Math.round(svgWidth * scale), ch = Math.round(svgHeight * scale);
+        offCanvas.width = cw; offCanvas.height = ch;
+        const ctx = offCanvas.getContext('2d', { willReadFrequently: true });
+        ctx.clearRect(0, 0, cw, ch);
+
+        const img = new Image();
+        if (isRaster) {
+          await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = fileSource; });
+        } else {
+          const svgBlob = new Blob([fileSource], { type: 'image/svg+xml;charset=utf-8' });
+          const url = URL.createObjectURL(svgBlob);
+          await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
+          URL.revokeObjectURL(url);
+        }
+        ctx.drawImage(img, 0, 0, cw, ch);
+
+        setStatus('Extracting shape...', true); setProgress(15); await sleep(20);
+
+        // Binary image
+        const imageData = ctx.getImageData(0, 0, cw, ch);
+        const px = imageData.data;
+        const binary = new Uint8Array(cw * ch);
+        const threshold = isRaster ? parseInt(traceThreshold.value) : 700;
+
+        for (let i = 0; i < cw * ch; i++) {
+          const a = px[i * 4 + 3], r = px[i * 4], g = px[i * 4 + 1], b = px[i * 4 + 2];
+          if (isRaster) {
+            const lum = (r + g + b) / 3;
+            binary[i] = (a > 30 && lum < threshold) ? 1 : 0;
+          } else {
+            binary[i] = (a > 30 && (r + g + b) < threshold) ? 1 : 0;
+          }
+        }
+
+        setStatus('Computing distance transform...', true); setProgress(25); await sleep(20);
+
+        // Distance transform (Euclidean approximation via two-pass)
+        const dist = computeDistanceTransform(binary, cw, ch);
+
+        setStatus('Extracting contour lines...', true); setProgress(55); await sleep(20);
+
+        // Extract contours at regular intervals
+        const spacingMM = parseFloat(lineSpacing.value);
+        const maxDist = dist.reduce((a, b) => Math.max(a, b), 0);
+        const simplifyTol = parseFloat(simplifySlider.value);
+        const minLen = parseInt(minContour.value);
+
+        const physW = parseFloat(physicalWidth.value) || 100;
+        // How many SVG user units equal 1 mm
+        const unitsPerMM = svgWidth / physW;
+        const penTipMM = parseFloat(strokeWidth.value) || 0.5;
+        const effectiveStrokeWidth = penTipMM * unitsPerMM;
+
+        // Convert mm values to rasterised-pixel distances
+        // (the distance transform is in offCanvas pixel space, so multiply by scale)
+        const spacingPx = spacingMM * unitsPerMM * scale;
+        const penRadiusPx = (penTipMM / 2) * unitsPerMM * scale;
+        const penDiameterPx = penTipMM * unitsPerMM * scale;
+
+        const sc = strokeColor.value;
+
+        let allContours = [];
+
+        // First contour: outer edge of pen sits exactly on the shape boundary.
+        // The pen centre is therefore inset by half the pen width from the edge.
+        // Minimum offset is 0.5 (the natural boundary distance used by the DT).
+        const firstLevel = Math.max(0.5, penRadiusPx);
+        allContours = allContours.concat(marchingSquares(dist, cw, ch, firstLevel));
+
+        // Subsequent contours spaced by spacingPx (defaults = pen diameter → gapless)
+        for (let level = firstLevel + spacingPx; level <= maxDist; level += spacingPx) {
+          const contours = marchingSquares(dist, cw, ch, level);
+          allContours = allContours.concat(contours);
+        }
+
+        // ── Thin-shape fallback: medial-axis centre-line ──
+        // Any region whose local DT maximum < firstLevel is too narrow for even one
+        // offset contour pass.  Trace its skeleton ridge as a single centre path.
+        setStatus('Checking thin areas…', true); setProgress(70); await sleep(10);
+        {
+          const ridgeLines = computeMedialAxis(dist, cw, ch, 0.5, firstLevel);
+          for (const chain of ridgeLines) allContours.push(chain);
+        }
+
+        setStatus('Simplifying paths...', true); setProgress(80); await sleep(20);
+
+        // Filter short contours, simplify, scale back
+        generatedPathsStr = '';
+        let pathCount = 0;
+        for (let contour of allContours) {
+          // Scale to SVG coordinates
+          let pts = contour.map(p => ({ x: p.x / scale, y: p.y / scale }));
+          // Calculate length
+          let len = 0;
+          for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+          if (len < minLen / scale) continue;
+
+          if (simplifyTol > 0) pts = douglasPeucker(pts, simplifyTol / scale);
+          if (pts.length < 2) continue;
+
+          // Generate smooth Catmull-Rom curve if we have enough points, else straight lines
+          const isClosed = Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y) < 3 / scale;
+          let d = catmullRom2bezier(pts, isClosed);
+
+          generatedPathsStr += `<path d="${d}" fill="none" stroke="${sc}" stroke-width="${effectiveStrokeWidth}" stroke-linecap="round" stroke-linejoin="round"/>\n`;
+          pathCount++;
+        }
+
+        // Build preview
+        let previewInner = '';
+        if (showOriginal.checked) {
+          if (isRaster) {
+            previewInner += `<image href="${fileSource}" width="${svgWidth}" height="${svgHeight}" opacity="0.15" />\n`;
+          } else {
+            const parser = new DOMParser();
+            const origDoc = parser.parseFromString(fileSource, 'image/svg+xml');
+            previewInner += `<g opacity="0.15">${origDoc.documentElement.innerHTML}</g>\n`;
+          }
+        }
+        previewInner += generatedPathsStr;
+        const previewSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${svgViewBox}" width="${svgWidth}" height="${svgHeight}" style="pointer-events:none">\n${previewInner}</svg>`;
+
+        displayResult(previewSVG);
+        setProgress(100);
+        setStatus(`Generated ${pathCount} contour path(s) across ${Math.floor((maxDist - firstLevel) / spacingPx) + 1} levels`, true);
+        exportBtn.disabled = false;
+
+      } catch (err) {
+        setStatus('❌ Error: ' + err.message);
+        console.error(err);
+      }
+      processBtn.disabled = false; processBtn.classList.remove('processing');
+    });
+
+    function displayResult(svgStr) {
+      clearPane(paneResult);
+      const e = paneResult.querySelector('.empty-state'); if (e) e.style.display = 'none';
+      const div = document.createElement('div'); div.innerHTML = svgStr;
+      const svg = div.querySelector('svg');
+      if (svg) {
+        svg.classList.add('fade-in');
+        $('zoomResult').appendChild(svg);
+        resetZoom('zoomResult');
+      }
+    }
+
+    // ─── Export ───
+    exportBtn.addEventListener('click', () => {
+      if (!generatedPathsStr) return;
+
+      const physW = parseFloat(physicalWidth.value) || 100;
+      const physH = (physW * (svgHeight / svgWidth)).toFixed(2);
+
+      const finalSVG = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="${svgViewBox}"
+     width="${physW}mm"
+     height="${physH}mm">
+${generatedPathsStr}</svg>`;
+      const blob = new Blob([finalSVG], { type: 'image/svg+xml' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = currentFileName.replace('.svg', '') + '_contour.svg';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setStatus('Exported! ✅', true);
+    });
+
+    // ────────────────────────────────────────────────────────────
+    //  Distance Transform (two-pass Euclidean approximation)
+    // ────────────────────────────────────────────────────────────
+    function computeDistanceTransform(binary, w, h) {
+      const INF = w + h;
+      const dist = new Float32Array(w * h);
+
+      // Initialize: 0 for background/border pixels, INF for interior
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const i = y * w + x;
+          if (binary[i] === 0) { dist[i] = 0; continue; }
+          // Check if this is a border pixel (has a background neighbor)
+          let isBorder = false;
+          for (let dy = -1; dy <= 1 && !isBorder; dy++) {
+            for (let dx = -1; dx <= 1 && !isBorder; dx++) {
+              if (dx === 0 && dy === 0) continue;
+              const nx = x + dx, ny = y + dy;
+              if (nx < 0 || nx >= w || ny < 0 || ny >= h || binary[ny * w + nx] === 0) {
+                isBorder = true;
+              }
+            }
+          }
+          dist[i] = isBorder ? 0.5 : INF;
+        }
+      }
+
+      // Forward pass
+      for (let y = 1; y < h - 1; y++) {
+        for (let x = 1; x < w - 1; x++) {
+          const i = y * w + x;
+          if (dist[i] === 0) continue;
+          const d = dist[i];
+          dist[i] = Math.min(d,
+            dist[(y - 1) * w + (x - 1)] + 1.414,
+            dist[(y - 1) * w + x] + 1,
+            dist[(y - 1) * w + (x + 1)] + 1.414,
+            dist[y * w + (x - 1)] + 1
+          );
+        }
+      }
+
+      // Backward pass
+      for (let y = h - 2; y >= 1; y--) {
+        for (let x = w - 2; x >= 1; x--) {
+          const i = y * w + x;
+          if (dist[i] === 0) continue;
+          dist[i] = Math.min(dist[i],
+            dist[y * w + (x + 1)] + 1,
+            dist[(y + 1) * w + (x - 1)] + 1.414,
+            dist[(y + 1) * w + x] + 1,
+            dist[(y + 1) * w + (x + 1)] + 1.414
+          );
+        }
+      }
+
+      return dist;
+    }
+
+    // ────────────────────────────────────────────────────────────
+    //  Marching Squares — extract iso-contours at a given level
+    // ────────────────────────────────────────────────────────────
+    function marchingSquares(field, w, h, level) {
+      const contours = [];
+      const visited = new Uint8Array((w - 1) * (h - 1));
+
+      function getCase(x, y) {
+        const tl = field[y * w + x] >= level ? 1 : 0;
+        const tr = field[y * w + x + 1] >= level ? 1 : 0;
+        const br = field[(y + 1) * w + x + 1] >= level ? 1 : 0;
+        const bl = field[(y + 1) * w + x] >= level ? 1 : 0;
+        return tl | (tr << 1) | (br << 2) | (bl << 3);
+      }
+
+      function lerp(v1, v2, level) {
+        if (Math.abs(v2 - v1) < 0.0001) return 0.5;
+        return (level - v1) / (v2 - v1);
+      }
+
+      function getEdgePoint(x, y, edge) {
+        const tl = field[y * w + x];
+        const tr = field[y * w + x + 1];
+        const br = field[(y + 1) * w + x + 1];
+        const bl = field[(y + 1) * w + x];
+        switch (edge) {
+          case 0: return { x: x + lerp(tl, tr, level), y: y }; // top
+          case 1: return { x: x + 1, y: y + lerp(tr, br, level) }; // right
+          case 2: return { x: x + lerp(bl, br, level), y: y + 1 }; // bottom
+          case 3: return { x: x, y: y + lerp(tl, bl, level) }; // left
+        }
+      }
+
+      // Edge connections for each case
+      const edgeTable = [
+        [],           // 0
+        [[3, 0]],     // 1
+        [[0, 1]],     // 2
+        [[3, 1]],     // 3
+        [[1, 2]],     // 4
+        [[3, 0], [1, 2]], // 5 (ambiguous)
+        [[0, 2]],     // 6
+        [[3, 2]],     // 7
+        [[2, 3]],     // 8
+        [[2, 0]],     // 9
+        [[0, 1], [2, 3]], // 10 (ambiguous)
+        [[2, 1]],     // 11
+        [[1, 3]],     // 12
+        [[1, 0]],     // 13
+        [[0, 3]],     // 14
+        [],           // 15
+      ];
+
+      // Simple approach: iterate and collect segments, then chain them
+      const segments = [];
+      for (let y = 0; y < h - 1; y++) {
+        for (let x = 0; x < w - 1; x++) {
+          const c = getCase(x, y);
+          const edges = edgeTable[c];
+          for (const [e1, e2] of edges) {
+            segments.push([getEdgePoint(x, y, e1), getEdgePoint(x, y, e2)]);
+          }
+        }
+      }
+
+      // Chain segments into contours
+      if (segments.length === 0) return contours;
+
+      // Build adjacency by rounding endpoints to a grid key
+      const EPS = 0.001;
+      function key(p) { return `${Math.round(p.x / EPS) * EPS},${Math.round(p.y / EPS) * EPS}`; }
+
+      const endpointMap = new Map();
+      const used = new Uint8Array(segments.length);
+
+      for (let i = 0; i < segments.length; i++) {
+        const k0 = key(segments[i][0]), k1 = key(segments[i][1]);
+        if (!endpointMap.has(k0)) endpointMap.set(k0, []);
+        if (!endpointMap.has(k1)) endpointMap.set(k1, []);
+        endpointMap.get(k0).push({ segIdx: i, end: 0 });
+        endpointMap.get(k1).push({ segIdx: i, end: 1 });
+      }
+
+      for (let startIdx = 0; startIdx < segments.length; startIdx++) {
+        if (used[startIdx]) continue;
+        used[startIdx] = 1;
+        const chain = [segments[startIdx][0], segments[startIdx][1]];
+
+        // Extend forward
+        let extending = true;
+        while (extending) {
+          extending = false;
+          const lastKey = key(chain[chain.length - 1]);
+          const candidates = endpointMap.get(lastKey);
+          if (candidates) {
+            for (const c of candidates) {
+              if (used[c.segIdx]) continue;
+              used[c.segIdx] = 1;
+              const seg = segments[c.segIdx];
+              chain.push(c.end === 0 ? seg[1] : seg[0]);
+              extending = true;
+              break;
+            }
+          }
+        }
+
+        // Extend backward
+        extending = true;
+        while (extending) {
+          extending = false;
+          const firstKey = key(chain[0]);
+          const candidates = endpointMap.get(firstKey);
+          if (candidates) {
+            for (const c of candidates) {
+              if (used[c.segIdx]) continue;
+              used[c.segIdx] = 1;
+              const seg = segments[c.segIdx];
+              chain.unshift(c.end === 0 ? seg[1] : seg[0]);
+              extending = true;
+              break;
+            }
+          }
+        }
+
+        if (chain.length >= 2) contours.push(chain);
+      }
+
+      return contours;
+    }
+
+    // ────────────────────────────────────────────────────────────
+    //  Douglas-Peucker simplification
+    // ────────────────────────────────────────────────────────────
+    function douglasPeucker(pts, epsilon) {
+      if (pts.length <= 2) return pts;
+      let maxDist = 0, maxIdx = 0;
+      const s = pts[0], e = pts[pts.length - 1];
+      for (let i = 1; i < pts.length - 1; i++) {
+        const d = ptLineDist(pts[i], s, e);
+        if (d > maxDist) { maxDist = d; maxIdx = i; }
+      }
+      if (maxDist > epsilon) {
+        const l = douglasPeucker(pts.slice(0, maxIdx + 1), epsilon);
+        const r = douglasPeucker(pts.slice(maxIdx), epsilon);
+        return l.slice(0, -1).concat(r);
+      }
+      return [s, e];
+    }
+    function ptLineDist(p, a, b) {
+      const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy;
+      if (l2 === 0) return Math.hypot(p.x - a.x, p.y - a.y);
+      let t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
+      return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+    }
+    // ────────────────────────────────────────────────────────────
+    //  Medial Axis — thin-shape centre-line fallback
+    //  Extracts a properly-ordered skeleton polyline for regions in (minLevel, maxLevel).
+    //  Strategy:
+    //   1. Find local-max (ridge) pixels in the DT thin zone.
+    //   2. Walk chains from dead-end pixels (0-1 ridge neighbours).
+    //   3. At each step, move to the highest-DT unvisited neighbour (stays on ridge).
+    // ────────────────────────────────────────────────────────────
+    function computeMedialAxis(dist, w, h, minLevel, maxLevel) {
+      // 1. Mark ridge pixels
+      const isRidge = new Uint8Array(w * h);
+      for (let y = 1; y < h - 1; y++) {
+        for (let x = 1; x < w - 1; x++) {
+          const v = dist[y * w + x];
+          if (v <= minLevel || v >= maxLevel) continue;
+          let isMax = true;
+          outer: for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              if (!(dx || dy)) continue;
+              if (dist[(y + dy) * w + (x + dx)] > v + 0.001) { isMax = false; break outer; }
+            }
+          }
+          if (isMax) isRidge[y * w + x] = 1;
+        }
+      }
+
+      // Helper: list unvisited 8-connected ridge neighbours, sorted by DT desc
+      function ridgeNeighbors(x, y, used) {
+        const nb = [];
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (!(dx || dy)) continue;
+            const nx = x + dx, ny = y + dy;
+            if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+            if (isRidge[ny * w + nx] && !used[ny * w + nx]) nb.push({ x: nx, y: ny });
+          }
+        }
+        nb.sort((a, b) => dist[b.y * w + b.x] - dist[a.y * w + a.x]);
+        return nb;
+      }
+
+      // Helper: count ALL 8-connected ridge neighbours (ignoring used)
+      function ridgeNeighborCount(x, y) {
+        let n = 0;
+        for (let dy = -1; dy <= 1; dy++)
+          for (let dx = -1; dx <= 1; dx++) {
+            if (!(dx || dy)) continue;
+            const nx = x + dx, ny = y + dy;
+            if (nx >= 0 && nx < w && ny >= 0 && ny < h && isRidge[ny * w + nx]) n++;
+          }
+        return n;
+      }
+
+      const used = new Uint8Array(w * h);
+      const chains = [];
+
+      // Walk a chain starting from (sx, sy)
+      function walkFrom(sx, sy) {
+        if (used[sy * w + sx]) return;
+        const chain = [];
+        let cx = sx, cy = sy;
+        while (true) {
+          used[cy * w + cx] = 1;
+          chain.push({ x: cx, y: cy });
+          const nb = ridgeNeighbors(cx, cy, used);
+          if (!nb.length) break;
+          cx = nb[0].x; cy = nb[0].y;
+        }
+        if (chain.length >= 3) chains.push(chain);
+      }
+
+      // 2. Seed from dead-end pixels first (0 or 1 total ridge neighbours)
+      for (let y = 1; y < h - 1; y++)
+        for (let x = 1; x < w - 1; x++)
+          if (isRidge[y * w + x] && ridgeNeighborCount(x, y) <= 1) walkFrom(x, y);
+
+      // 3. Catch any remaining loops/blobs (junction regions)
+      for (let y = 1; y < h - 1; y++)
+        for (let x = 1; x < w - 1; x++)
+          if (isRidge[y * w + x] && !used[y * w + x]) walkFrom(x, y);
+
+      return chains;
+    }
+
+    // ────────────────────────────────────────────────────────────
+    //  Spline interpolation (Catmull-Rom to Cubic Bezier)
+    // ────────────────────────────────────────────────────────────
+    function catmullRom2bezier(points, isClosed) {
+      if (points.length < 3) {
+        let d = `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
+        for (let i = 1; i < points.length; i++) d += ` L ${points[i].x.toFixed(2)} ${points[i].y.toFixed(2)}`;
+        if (isClosed) d += ' Z';
+        return d;
+      }
+
+      let d = "";
+      for (let i = 0; i < (isClosed ? points.length : points.length - 1); i++) {
+        const p0 = points[(i - 1 + points.length) % points.length];
+        const p1 = points[i];
+        const p2 = points[(i + 1) % points.length];
+        const p3 = points[(i + 2) % points.length];
+
+        if (i === 0) {
+          d += `M ${p1.x.toFixed(2)} ${p1.y.toFixed(2)} `;
+        }
+
+        // Catmull-Rom tension (0 = stiff, 1 = super loose, 0.5 = standard)
+        const t = 1.0; // standard
+
+        let cp1x, cp1y, cp2x, cp2y;
+
+        if (!isClosed && i === 0) {
+          // First segment of open curve
+          cp1x = p1.x + (p2.x - p1.x) / 3 * t;
+          cp1y = p1.y + (p2.y - p1.y) / 3 * t;
+        } else {
+          cp1x = p1.x + (p2.x - p0.x) / 6 * t;
+          cp1y = p1.y + (p2.y - p0.y) / 6 * t;
+        }
+
+        if (!isClosed && i === points.length - 2) {
+          // Last segment of open curve
+          cp2x = p2.x - (p2.x - p1.x) / 3 * t;
+          cp2y = p2.y - (p2.y - p1.y) / 3 * t;
+        } else {
+          cp2x = p2.x - (p3.x - p1.x) / 6 * t;
+          cp2y = p2.y - (p3.y - p1.y) / 6 * t;
+        }
+
+        d += `C ${cp1x.toFixed(2)} ${cp1y.toFixed(2)}, ${cp2x.toFixed(2)} ${cp2y.toFixed(2)}, ${p2.x.toFixed(2)} ${p2.y.toFixed(2)} `;
+      }
+      if (isClosed) d += 'Z';
+      return d;
+    }
+
+    // ────────────────────────────────────────────────────────────
+    //  Zoom and Pan Logic
+    // ────────────────────────────────────────────────────────────
+    const zoomStates = {
+      'zoomOriginal': { scale: 1, x: 0, y: 0 },
+      'zoomResult': { scale: 1, x: 0, y: 0 }
+    };
+
+    function resetZoom(id) {
+      zoomStates[id] = { scale: 1, x: 0, y: 0 };
+      applyZoom(id);
+
+      // Auto-fit after a tiny delay to ensure SVG dimensions are known
+      setTimeout(() => {
+        const container = $(id);
+        const pane = container.parentElement;
+        const svg = container.querySelector('svg');
+        if (!svg || !svgWidth || !svgHeight) return;
+
+        // Find best fit scale
+        const paneW = pane.clientWidth - 48; // padding
+        const paneH = pane.clientHeight - 48;
+        const scaleX = paneW / svgWidth;
+        const scaleY = paneH / svgHeight;
+        const bestScale = Math.min(scaleX, scaleY, 1) * 0.95; // 95% of max fit
+
+        zoomStates[id].scale = bestScale;
+
+        // Center it
+        const scaledW = svgWidth * bestScale;
+        const scaledH = svgHeight * bestScale;
+        zoomStates[id].x = (pane.clientWidth - scaledW) / 2;
+        zoomStates[id].y = (pane.clientHeight - scaledH) / 2;
+
+        applyZoom(id);
+      }, 10);
+    }
+
+    function applyZoom(id) {
+      const state = zoomStates[id];
+      const el = $(id);
+      if (el) el.style.transform = `translate(${state.x}px, ${state.y}px) scale(${state.scale})`;
+    }
+
+    function setupZoomPan(paneId, zoomId) {
+      const pane = $(paneId);
+      let isDragging = false;
+      let lastX = 0, lastY = 0;
+
+      pane.addEventListener('wheel', e => {
+        e.preventDefault();
+        const state = zoomStates[zoomId];
+        const zoomAmount = e.deltaY > 0 ? 0.9 : 1.1; // 10% step
+
+        // Zoom toward mouse pointer center
+        const rect = pane.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        // Adjust translation to keep mouse point stationary
+        const nx = mouseX - (mouseX - state.x) * zoomAmount;
+        const ny = mouseY - (mouseY - state.y) * zoomAmount;
+
+        state.scale *= zoomAmount;
+        state.x = nx;
+        state.y = ny;
+        applyZoom(zoomId);
+      }, { passive: false });
+
+      pane.addEventListener('pointerdown', e => {
+        if (e.button !== 0 && e.button !== 1) return; // Only left/middle click
+        isDragging = true;
+        pane.setPointerCapture(e.pointerId);
+        lastX = e.clientX;
+        lastY = e.clientY;
+      });
+
+      pane.addEventListener('pointermove', e => {
+        if (!isDragging) return;
+        const dx = e.clientX - lastX;
+        const dy = e.clientY - lastY;
+        zoomStates[zoomId].x += dx;
+        zoomStates[zoomId].y += dy;
+        lastX = e.clientX;
+        lastY = e.clientY;
+        applyZoom(zoomId);
+      });
+
+      pane.addEventListener('pointerup', e => {
+        isDragging = false;
+        pane.releasePointerCapture(e.pointerId);
+      });
+    }
+
+    setupZoomPan('paneOriginal', 'zoomOriginal');
+    setupZoomPan('paneResult', 'zoomResult');
+  </script>
+</body>
+
+</html>

@@ -1,0 +1,12 @@
+{
+  "name": "plotterfill",
+  "version": "1.0.0",
+  "description": "Contour Fill Generator for Pen Plotters",
+  "private": true,
+  "scripts": {
+    "start": "npx serve .",
+    "dev": "npx serve ."
+  },
+  "keywords": ["pen-plotter", "svg", "contour"],
+  "license": "MIT"
+}
