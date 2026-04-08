@@ -658,12 +658,48 @@
         </div>
       </div>
 
+      <div class="control-group">
+        <label>Curve Smoothing</label>
+        <div class="control-row">
+          <input type="range" id="smoothingPasses" min="0" max="10" value="2" step="1">
+          <span class="range-value" id="smoothingPassesVal">2</span>
+        </div>
+        <div class="info-box" style="margin-top:4px;font-size:11px">Smooths out pixel stairs before simplification.</div>
+      </div>
+
+      <div class="control-group">
+        <label>Curve Tension</label>
+        <div class="control-row">
+          <input type="range" id="curveTension" min="0" max="1" value="0.5" step="0.1">
+          <span class="range-value" id="curveTensionVal">0.5</span>
+        </div>
+        <div class="info-box" style="margin-top:4px;font-size:11px">Lower values = tighter corners, higher = looser curves.</div>
+      </div>
+
       <div class="control-group" id="thresholdGroup" style="display:none">
         <label>Image Trace Threshold</label>
         <div class="control-row">
           <input type="range" id="traceThreshold" min="0" max="255" value="128" step="1">
           <span class="range-value" id="traceThresholdVal">128</span>
         </div>
+      </div>
+
+      <hr class="divider">
+
+      <label class="checkbox-row" id="multiColorModeContainer">
+        <input type="checkbox" id="multiColorMode">
+        Enable Multi-Color Trace
+      </label>
+
+      <div class="control-group" id="multiColorGroup" style="display:none; margin-top:10px;">
+        <label>Number of Colors</label>
+        <div class="control-row">
+          <input type="range" id="numColors" min="2" max="16" value="3" step="1">
+          <span class="range-value" id="numColorsVal">3</span>
+        </div>
+        <button class="btn btn-secondary btn-full" id="detectColorsBtn" style="margin-top: 8px;">🎨 Detect Colors</button>
+        <div id="colorSwatches" style="display:flex; flex-direction:column; gap:5px; margin-top:10px;"></div>
+        <div class="info-box" style="margin-top:4px;font-size:11px">Generates separate contour layers for each detected color.</div>
       </div>
 
       <div class="control-group">
@@ -694,7 +730,7 @@
         </div>
       </div>
 
-      <div class="control-group">
+      <div class="control-group" id="strokeColorGroup">
         <label>Output Stroke Color</label>
         <div class="control-row">
           <input type="color" id="strokeColor" value="#4f8aff">
@@ -785,10 +821,20 @@
     const renderScale = $('renderScale'), renderScaleVal = $('renderScaleVal');
     const lineSpacing = $('lineSpacing'), lineSpacingVal = $('lineSpacingVal');
     const simplifySlider = $('simplify'), simplifyVal = $('simplifyVal');
+    const smoothingPasses = $('smoothingPasses'), smoothingPassesVal = $('smoothingPassesVal');
+    const curveTension = $('curveTension'), curveTensionVal = $('curveTensionVal');
     const traceThreshold = $('traceThreshold'), traceThresholdVal = $('traceThresholdVal');
     const minContour = $('minContour'), minContourVal = $('minContourVal');
     const strokeWidth = $('strokeWidth'), strokeWidthVal = $('strokeWidthVal');
     const strokeColor = $('strokeColor'), strokeColorHex = $('strokeColorHex');
+    const strokeColorGroup = $('strokeColorGroup');
+    const thresholdGroup = $('thresholdGroup');
+    const multiColorMode = $('multiColorMode');
+    const multiColorGroup = $('multiColorGroup');
+    const numColors = $('numColors'), numColorsVal = $('numColorsVal');
+    const detectColorsBtn = $('detectColorsBtn');
+    const colorSwatches = $('colorSwatches');
+    let extractedClusters = [];
     const showOriginal = $('showOriginal');
     const processBtn = $('processBtn'), exportBtn = $('exportBtn');
     const progressBar = $('progressBar'), progressFill = $('progressFill');
@@ -901,6 +947,17 @@
     renderScale.addEventListener('input', () => renderScaleVal.textContent = renderScale.value + 'x');
     lineSpacing.addEventListener('input', () => lineSpacingVal.textContent = parseFloat(lineSpacing.value).toFixed(2));
     simplifySlider.addEventListener('input', () => simplifyVal.textContent = parseFloat(simplifySlider.value).toFixed(1));
+    smoothingPasses.addEventListener('input', () => smoothingPassesVal.textContent = smoothingPasses.value);
+    curveTension.addEventListener('input', () => curveTensionVal.textContent = parseFloat(curveTension.value).toFixed(1));
+    numColors.addEventListener('input', () => numColorsVal.textContent = numColors.value);
+    multiColorMode.addEventListener('change', () => {
+      const isMulti = multiColorMode.checked;
+      multiColorGroup.style.display = isMulti ? 'block' : 'none';
+      strokeColorGroup.style.display = isMulti ? 'none' : 'flex';
+      if (thresholdGroup) {
+         if (isRaster) thresholdGroup.style.display = isMulti ? 'none' : 'flex';
+      }
+    });
     if (traceThreshold) traceThreshold.addEventListener('input', () => traceThresholdVal.textContent = traceThreshold.value);
     minContour.addEventListener('input', () => minContourVal.textContent = minContour.value);
     strokeWidth.addEventListener('input', () => strokeWidthVal.textContent = strokeWidth.value);
@@ -994,6 +1051,64 @@
       }
     }
 
+    // ─── Detect Colors ───
+    detectColorsBtn.addEventListener('click', async () => {
+      if (!fileSource) return;
+      detectColorsBtn.disabled = true;
+      setStatus('Detecting colors...', true); setProgress(10);
+      await sleep(10);
+
+      try {
+        const img = new Image();
+        if (isRaster) {
+          await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = fileSource; });
+        } else {
+          const svgBlob = new Blob([fileSource], { type: 'image/svg+xml;charset=utf-8' });
+          const url = URL.createObjectURL(svgBlob);
+          await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
+          URL.revokeObjectURL(url);
+        }
+
+        // Draw small thumbnail to detect colors instantly
+        const maxDim = 200;
+        let scale = 1;
+        if (svgWidth > maxDim || svgHeight > maxDim) {
+           scale = maxDim / Math.max(svgWidth, svgHeight);
+        }
+        const tw = Math.max(1, Math.round(svgWidth * scale));
+        const th = Math.max(1, Math.round(svgHeight * scale));
+
+        offCanvas.width = tw; offCanvas.height = th;
+        const ctx = offCanvas.getContext('2d', { willReadFrequently: true });
+        ctx.clearRect(0, 0, tw, th);
+        ctx.drawImage(img, 0, 0, tw, th);
+
+        const px = ctx.getImageData(0, 0, tw, th).data;
+        const k = parseInt(numColors.value);
+        
+        extractedClusters = computeKMeans(px, tw, th, k);
+        
+        colorSwatches.innerHTML = '';
+        extractedClusters.forEach((c, idx) => {
+          const label = document.createElement('label');
+          label.style.cssText = 'display:flex; align-items:center; gap:8px; cursor:pointer; padding:4px 0;';
+          label.innerHTML = `
+            <input type="checkbox" class="color-toggle" data-idx="${idx}" checked style="accent-color:var(--accent);">
+            <div style="width:16px; height:16px; background:${c.hex}; border-radius:4px; border:1px solid #556580;"></div>
+            <span style="font-size:12px; color:var(--text-secondary)">${c.hex}</span>
+          `;
+          colorSwatches.appendChild(label);
+        });
+
+        setStatus('Colors detected! Select which to trace.', true);
+        setProgress(100);
+
+      } catch (err) {
+        setStatus('❌ ' + err.message);
+      }
+      detectColorsBtn.disabled = false;
+    });
+
     // ─── Process ───
     processBtn.addEventListener('click', async () => {
       if (!fileSource) return;
@@ -1024,91 +1139,130 @@
         // Binary image
         const imageData = ctx.getImageData(0, 0, cw, ch);
         const px = imageData.data;
-        const binary = new Uint8Array(cw * ch);
-        const threshold = isRaster ? parseInt(traceThreshold.value) : 700;
+        
+        let colorClusters = [];
+        const isMulti = multiColorMode.checked;
+        
+        if (isMulti) {
+           if (!extractedClusters || extractedClusters.length === 0) {
+             setStatus('Please click Detect Colors first.');
+             processBtn.disabled = false; processBtn.classList.remove('processing');
+             return;
+           }
+           setStatus('Mapping pixels to detected colors...', true); setProgress(15); await sleep(20);
+           
+           const activeToggles = Array.from(document.querySelectorAll('.color-toggle')).map(cb => cb.checked);
+           
+           colorClusters = extractedClusters.map((c, idx) => ({
+              r: c.r, g: c.g, b: c.b, hex: c.hex,
+              active: activeToggles[idx],
+              binary: new Uint8Array(cw * ch)
+           }));
 
-        for (let i = 0; i < cw * ch; i++) {
-          const a = px[i * 4 + 3], r = px[i * 4], g = px[i * 4 + 1], b = px[i * 4 + 2];
-          if (isRaster) {
-            const lum = (r + g + b) / 3;
-            binary[i] = (a > 30 && lum < threshold) ? 1 : 0;
-          } else {
-            binary[i] = (a > 30 && (r + g + b) < threshold) ? 1 : 0;
-          }
+           for (let i = 0; i < cw * ch; i++) {
+              if (px[i * 4 + 3] > 30) {
+                 const pr = px[i * 4], pg = px[i * 4 + 1], pb = px[i * 4 + 2];
+                 let minDist = Infinity;
+                 let minC = 0;
+                 for (let c = 0; c < colorClusters.length; c++) {
+                    const d = (pr - colorClusters[c].r)**2 + (pg - colorClusters[c].g)**2 + (pb - colorClusters[c].b)**2;
+                    if (d < minDist) { minDist = d; minC = c; }
+                 }
+                 if (colorClusters[minC].active) {
+                    colorClusters[minC].binary[i] = 1;
+                 }
+              }
+           }
+           colorClusters = colorClusters.filter(c => c.active && c.binary.some(v => v === 1));
+        } else {
+           // Fake a single cluster representing the monochrome mode
+           colorClusters = [{
+             r: 0, g: 0, b: 0, hex: strokeColor.value,
+             binary: new Uint8Array(cw * ch)
+           }];
+           const binary = colorClusters[0].binary;
+           const threshold = isRaster ? parseInt(traceThreshold.value) : 700;
+           for (let i = 0; i < cw * ch; i++) {
+             const a = px[i * 4 + 3], r = px[i * 4], g = px[i * 4 + 1], b = px[i * 4 + 2];
+             if (isRaster) {
+               const lum = (r + g + b) / 3;
+               binary[i] = (a > 30 && lum < threshold) ? 1 : 0;
+             } else {
+               binary[i] = (a > 30 && (r + g + b) < threshold) ? 1 : 0;
+             }
+           }
         }
 
-        setStatus('Computing distance transform...', true); setProgress(25); await sleep(20);
-
-        // Distance transform (Euclidean approximation via two-pass)
-        const dist = computeDistanceTransform(binary, cw, ch);
-
-        setStatus('Extracting contour lines...', true); setProgress(55); await sleep(20);
-
-        // Extract contours at regular intervals
+        generatedPathsStr = '';
+        let totalPathCount = 0;
+        
         const spacingMM = parseFloat(lineSpacing.value);
-        const maxDist = dist.reduce((a, b) => Math.max(a, b), 0);
         const simplifyTol = parseFloat(simplifySlider.value);
+        const smoothIters = parseInt(smoothingPasses.value);
+        const tensionVal = parseFloat(curveTension.value);
         const minLen = parseInt(minContour.value);
-
         const physW = parseFloat(physicalWidth.value) || 100;
-        // How many SVG user units equal 1 mm
         const unitsPerMM = svgWidth / physW;
         const penTipMM = parseFloat(strokeWidth.value) || 0.5;
         const effectiveStrokeWidth = penTipMM * unitsPerMM;
-
-        // Convert mm values to rasterised-pixel distances
-        // (the distance transform is in offCanvas pixel space, so multiply by scale)
         const spacingPx = spacingMM * unitsPerMM * scale;
         const penRadiusPx = (penTipMM / 2) * unitsPerMM * scale;
-        const penDiameterPx = penTipMM * unitsPerMM * scale;
 
-        const sc = strokeColor.value;
+        for (let cIdx = 0; cIdx < colorClusters.length; cIdx++) {
+           const cluster = colorClusters[cIdx];
+           const binary = cluster.binary;
+           const sc = cluster.hex;
+           
+           if (isMulti) {
+               setStatus(`Processing color ${cIdx + 1}/${colorClusters.length}...`, true); 
+               setProgress(20 + (cIdx / colorClusters.length) * 60); 
+               await sleep(10);
+           } else {
+               setStatus('Computing distance transform...', true); setProgress(25); await sleep(20);
+           }
 
-        let allContours = [];
+           const dist = computeDistanceTransform(binary, cw, ch);
+           if (!isMulti) { setStatus('Extracting contour lines...', true); setProgress(55); await sleep(20); }
 
-        // First contour: outer edge of pen sits exactly on the shape boundary.
-        // The pen centre is therefore inset by half the pen width from the edge.
-        // Minimum offset is 0.5 (the natural boundary distance used by the DT).
-        const firstLevel = Math.max(0.5, penRadiusPx);
-        allContours = allContours.concat(marchingSquares(dist, cw, ch, firstLevel));
+           const maxDist = dist.reduce((a, b) => Math.max(a, b), 0);
+           let allContours = [];
+           const firstLevel = Math.max(0.5, penRadiusPx);
+           allContours = allContours.concat(marchingSquares(dist, cw, ch, firstLevel));
 
-        // Subsequent contours spaced by spacingPx (defaults = pen diameter → gapless)
-        for (let level = firstLevel + spacingPx; level <= maxDist; level += spacingPx) {
-          const contours = marchingSquares(dist, cw, ch, level);
-          allContours = allContours.concat(contours);
-        }
+           for (let level = firstLevel + spacingPx; level <= maxDist; level += spacingPx) {
+             const contours = marchingSquares(dist, cw, ch, level);
+             allContours = allContours.concat(contours);
+           }
 
-        // ── Thin-shape fallback: medial-axis centre-line ──
-        // Any region whose local DT maximum < firstLevel is too narrow for even one
-        // offset contour pass.  Trace its skeleton ridge as a single centre path.
-        setStatus('Checking thin areas…', true); setProgress(70); await sleep(10);
-        {
-          const ridgeLines = computeMedialAxis(dist, cw, ch, 0.5, firstLevel);
-          for (const chain of ridgeLines) allContours.push(chain);
-        }
+           if (!isMulti) { setStatus('Checking thin areas...', true); setProgress(70); await sleep(10); }
+           const ridgeLines = computeMedialAxis(dist, cw, ch, 0.5, firstLevel);
+           for (const chain of ridgeLines) allContours.push(chain);
 
-        setStatus('Simplifying paths...', true); setProgress(80); await sleep(20);
+           if (!isMulti) { setStatus('Simplifying paths...', true); setProgress(80); await sleep(20); }
+           
+           for (let contour of allContours) {
+             // Scale to SVG coordinates
+             let pts = contour.map(p => ({ x: p.x / scale, y: p.y / scale }));
+             // Calculate length
+             let len = 0;
+             for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+             if (len < minLen / scale) continue;
 
-        // Filter short contours, simplify, scale back
-        generatedPathsStr = '';
-        let pathCount = 0;
-        for (let contour of allContours) {
-          // Scale to SVG coordinates
-          let pts = contour.map(p => ({ x: p.x / scale, y: p.y / scale }));
-          // Calculate length
-          let len = 0;
-          for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
-          if (len < minLen / scale) continue;
+             // Laplacian Smoothing
+             if (smoothIters > 0) {
+               pts = smoothPolyline(pts, smoothIters);
+             }
 
-          if (simplifyTol > 0) pts = douglasPeucker(pts, simplifyTol / scale);
-          if (pts.length < 2) continue;
+             if (simplifyTol > 0) pts = douglasPeucker(pts, simplifyTol / scale);
+             if (pts.length < 2) continue;
 
-          // Generate smooth Catmull-Rom curve if we have enough points, else straight lines
-          const isClosed = Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y) < 3 / scale;
-          let d = catmullRom2bezier(pts, isClosed);
+             // Generate smooth Catmull-Rom curve if we have enough points, else straight lines
+             const isClosed = Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y) < 3 / scale;
+             let d = catmullRom2bezier(pts, isClosed, tensionVal);
 
-          generatedPathsStr += `<path d="${d}" fill="none" stroke="${sc}" stroke-width="${effectiveStrokeWidth}" stroke-linecap="round" stroke-linejoin="round"/>\n`;
-          pathCount++;
+             generatedPathsStr += `<path d="${d}" fill="none" class="layer-${cIdx}" stroke="${sc}" stroke-width="${effectiveStrokeWidth}" stroke-linecap="round" stroke-linejoin="round"/>\n`;
+             totalPathCount++;
+           }
         }
 
         // Build preview
@@ -1127,7 +1281,7 @@
 
         displayResult(previewSVG);
         setProgress(100);
-        setStatus(`Generated ${pathCount} contour path(s) across ${Math.floor((maxDist - firstLevel) / spacingPx) + 1} levels`, true);
+        setStatus(`Generated ${totalPathCount} contour path(s) successfully.`, true);
         exportBtn.disabled = false;
 
       } catch (err) {
@@ -1147,6 +1301,99 @@
         $('zoomResult').appendChild(svg);
         resetZoom('zoomResult');
       }
+    }
+
+    // ────────────────────────────────────────────────────────────
+    //  K-Means Color Clustering
+    // ────────────────────────────────────────────────────────────
+    function rgbToHex(r, g, b) {
+       return "#" + (1 << 24 | r << 16 | g << 8 | b).toString(16).slice(1).toUpperCase();
+    }
+    
+    function computeKMeans(px, w, h, k) {
+      // 1. Collect valid pixels (alpha > 30)
+      const valid = [];
+      for (let i = 0; i < w * h; i++) {
+        if (px[i * 4 + 3] > 30) {
+          valid.push({ r: px[i*4], g: px[i*4+1], b: px[i*4+2], idx: i });
+        }
+      }
+      if (valid.length === 0) return [];
+      
+      // 2. Initialize k centroids using Furthest Point Heuristic (K-Means++)
+      const centroids = [];
+      const first = valid[Math.floor(Math.random() * valid.length)];
+      centroids.push({ r: first.r, g: first.g, b: first.b });
+
+      const step = Math.max(1, Math.floor(valid.length / 5000)); // Sample ~5k points for speed
+      for (let i = 1; i < k; i++) {
+         let maxDist = -1;
+         let bestPoint = first;
+         for (let j = 0; j < valid.length; j += step) {
+            const p = valid[j];
+            let minDist = Infinity;
+            for (let c = 0; c < centroids.length; c++) {
+               const d = (p.r - centroids[c].r)**2 + (p.g - centroids[c].g)**2 + (p.b - centroids[c].b)**2;
+               if (d < minDist) minDist = d;
+            }
+            if (minDist > maxDist) {
+               maxDist = minDist;
+               bestPoint = p;
+            }
+         }
+         centroids.push({ r: bestPoint.r, g: bestPoint.g, b: bestPoint.b });
+      }
+      
+      // 3. Iterate k-means
+      const MAX_ITER = 10;
+      let assignments = new Int32Array(valid.length);
+      for (let iter = 0; iter < MAX_ITER; iter++) {
+         // assign
+         for (let i = 0; i < valid.length; i++) {
+            const p = valid[i];
+            let minDist = Infinity;
+            let minC = 0;
+            for (let c = 0; c < k; c++) {
+               const dist = (p.r - centroids[c].r)**2 + (p.g - centroids[c].g)**2 + (p.b - centroids[c].b)**2;
+               if (dist < minDist) { minDist = dist; minC = c; }
+            }
+            assignments[i] = minC;
+         }
+         // update centroids
+         const sums = Array(k).fill(0).map(() => ({ r: 0, g: 0, b: 0, count: 0 }));
+         for (let i = 0; i < valid.length; i++) {
+            const c = assignments[i];
+            sums[c].r += valid[i].r;
+            sums[c].g += valid[i].g;
+            sums[c].b += valid[i].b;
+            sums[c].count++;
+         }
+         let changed = false;
+         for (let c = 0; c < k; c++) {
+            if (sums[c].count > 0) {
+               const nr = Math.round(sums[c].r / sums[c].count);
+               const ng = Math.round(sums[c].g / sums[c].count);
+               const nb = Math.round(sums[c].b / sums[c].count);
+               if (centroids[c].r !== nr || centroids[c].g !== ng || centroids[c].b !== nb) changed = true;
+               centroids[c].r = nr; centroids[c].g = ng; centroids[c].b = nb;
+            }
+         }
+         if (!changed) break;
+      }
+      
+      // 4. Build binary arrays for each cluster
+      const clusters = centroids.map(c => ({
+         r: c.r, g: c.g, b: c.b,
+         hex: rgbToHex(c.r, c.g, c.b),
+         binary: new Uint8Array(w * h)
+      }));
+      
+      for (let i = 0; i < valid.length; i++) {
+         clusters[assignments[i]].binary[valid[i].idx] = 1;
+      }
+      
+      // remove empty clusters
+      return clusters.filter(c => c.binary.some(v => v === 1));
     }
 
     // ─── Export ───
@@ -1470,9 +1717,36 @@ ${generatedPathsStr}</svg>`;
     }
 
     // ────────────────────────────────────────────────────────────
+    //  Pre-Simplification Smoothing (Moving Average / Laplacian)
+    // ────────────────────────────────────────────────────────────
+    function smoothPolyline(pts, iterations) {
+      if (pts.length < 3) return pts;
+      let result = pts.slice();
+      for (let iter = 0; iter < iterations; iter++) {
+        const isClosed = Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y) < 0.1;
+        let next = new Array(pts.length);
+        for (let i = 0; i < pts.length; i++) {
+          if (!isClosed && (i === 0 || i === pts.length - 1)) {
+            next[i] = { x: result[i].x, y: result[i].y };
+          } else {
+            const prev = result[i === 0 ? pts.length - 2 : i - 1];
+            const curr = result[i];
+            const nxt = result[(i + 1) % pts.length];
+            next[i] = {
+              x: curr.x * 0.5 + (prev.x + nxt.x) * 0.25,
+              y: curr.y * 0.5 + (prev.y + nxt.y) * 0.25
+            };
+          }
+        }
+        result = next;
+      }
+      return result;
+    }
+
+    // ────────────────────────────────────────────────────────────
     //  Spline interpolation (Catmull-Rom to Cubic Bezier)
     // ────────────────────────────────────────────────────────────
-    function catmullRom2bezier(points, isClosed) {
+    function catmullRom2bezier(points, isClosed, tension = 0.5) {
       if (points.length < 3) {
         let d = `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
         for (let i = 1; i < points.length; i++) d += ` L ${points[i].x.toFixed(2)} ${points[i].y.toFixed(2)}`;
@@ -1491,8 +1765,8 @@ ${generatedPathsStr}</svg>`;
           d += `M ${p1.x.toFixed(2)} ${p1.y.toFixed(2)} `;
         }
 
-        // Catmull-Rom tension (0 = stiff, 1 = super loose, 0.5 = standard)
-        const t = 1.0; // standard
+        // Catmull-Rom tension
+        const t = tension;
 
         let cp1x, cp1y, cp2x, cp2y;
 
